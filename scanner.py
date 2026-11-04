@@ -8,10 +8,10 @@ def get(url):
     with urllib.request.urlopen(req,timeout=25) as r:return json.load(r)
 def candles(pair,interval):
     end=int(time.time()); start=end-86400*12
-    q=urllib.parse.urlencode({"pair":pair,"tf":interval,"from":start,"to":end})
-    data=get(BASE+"/tradingview/history?"+q)
-    if data.get("s")!="ok":return []
-    return [{"t":t,"c":float(c),"v":float(v)} for t,c,v in zip(data["t"],data["c"],data["v"]) if float(c)>0]
+    q=urllib.parse.urlencode({"symbol":pair.upper(),"tf":interval,"from":start,"to":end})
+    data=get("https://indodax.com/tradingview/history_v2?"+q)
+    if not isinstance(data,list):return []
+    return [{"t":x["Time"],"c":float(x["Close"]),"v":float(x["Volume"])} for x in data if float(x["Close"])>0]
 def ema(values,n):
     if not values:return 0
     e=values[0];k=2/(n+1)
@@ -47,11 +47,16 @@ def main():
     markets=raw if isinstance(raw,list) else raw.get("pairs",[])
     pairs=list(dict.fromkeys(x["ticker_id"].lower().replace("_","") for x in markets if isinstance(x,dict) and x.get("ticker_id","").upper().endswith("_IDR")))
     print("Pasangan IDR:",len(pairs))
+    # API publik membatasi 180 request/menit. Rotasi 70 pasangan per run (140 candle calls).
+    batch_size=70
+    batch=(int(time.time())//1800) % max(1,(len(pairs)+batch_size-1)//batch_size)
+    selected=pairs[batch*batch_size:(batch+1)*batch_size]
+    print("Batch:",batch+1,"pasangan batch:",len(selected))
     results={}
     for tf,name in [("15","CEPAT 15m–4j"),("240","SWING 1–7h")]:
         ranked=[]
         with ThreadPoolExecutor(max_workers=6) as executor:
-            futures={executor.submit(evaluate,pair,tf):pair for pair in pairs}
+            futures={executor.submit(evaluate,pair,tf):pair for pair in selected}
             for future in as_completed(futures):
                 pair=futures[future]
                 try:
@@ -62,6 +67,8 @@ def main():
         ranked.sort(key=lambda x:x["score"],reverse=True)
         results[name]=ranked[:10]
         print(name,"dievaluasi:",len(ranked))
+    if not any(results.values()):
+        raise RuntimeError("Tidak ada aset berhasil dianalisis; laporan sinyal dibatalkan")
     with open("report.json","w") as f:json.dump({"generated_utc":datetime.now(timezone.utc).isoformat(),"results":results},f,indent=2)
     lines=["📊 INDODAX AI SCANNER | PAPER ONLY",datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")]
     for name,items in results.items():
