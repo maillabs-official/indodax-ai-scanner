@@ -1,4 +1,5 @@
 import os, json, time, urllib.request, urllib.parse, statistics
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 BASE="https://indodax.com/api"
@@ -49,12 +50,15 @@ def main():
     results={}
     for tf,name in [("15","CEPAT 15m–4j"),("240","SWING 1–7h")]:
         ranked=[]
-        for pair in pairs:
-            try:
-                item=evaluate(pair,tf)
-                if item:ranked.append(item)
-            except Exception as exc:print("SKIP",pair,tf,str(exc)[:120])
-            time.sleep(.18)
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            futures={executor.submit(evaluate,pair,tf):pair for pair in pairs}
+            for future in as_completed(futures):
+                pair=futures[future]
+                try:
+                    item=future.result()
+                    if item:ranked.append(item)
+                except Exception as exc:
+                    print("SKIP",pair,tf,str(exc)[:120])
         ranked.sort(key=lambda x:x["score"],reverse=True)
         results[name]=ranked[:10]
         print(name,"dievaluasi:",len(ranked))
