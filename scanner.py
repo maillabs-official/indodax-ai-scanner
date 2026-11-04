@@ -42,8 +42,9 @@ def send(message):
     req=urllib.request.Request("https://api.telegram.org/bot"+token+"/sendMessage",data=data)
     with urllib.request.urlopen(req,timeout=25) as response:print("Telegram HTTP",response.status)
 def main():
-    markets=get(BASE+"/pairs").get("pairs",[])
-    pairs=[x["ticker_id"].lower().replace("_","") for x in markets if x.get("ticker_id","").upper().endswith("_IDR")]
+    raw=get(BASE+"/pairs")
+    markets=raw if isinstance(raw,list) else raw.get("pairs",[])
+    pairs=list(dict.fromkeys(x["ticker_id"].lower().replace("_","") for x in markets if isinstance(x,dict) and x.get("ticker_id","").upper().endswith("_IDR")))
     print("Pasangan IDR:",len(pairs))
     results={}
     for tf,name in [("15","CEPAT 15m–4j"),("240","SWING 1–7h")]:
